@@ -1,0 +1,63 @@
+with product as (
+    select * from {{ ref('stg_production__product') }}
+),
+current as (
+    select
+        product_id,
+        product_name,
+        product_number,
+        make_flag,
+        finished_goods_flag,
+        color,
+        safety_stock_level,
+        reorder_point,
+        standard_cost,
+        list_price,
+        size,
+        size_unit_measure_code,
+        weight_unit_measure_code,
+        weight,
+        days_to_manufacture,
+        product_line,
+        product_class,
+        product_style,
+        subcategory_id,
+        subcategory_name,
+        category_id,
+        category_name,
+        sell_start_date,
+        sell_end_date,
+        discontinued_date,
+        loaded_at,
+        row_number() over (partition by product_id order by loaded_at desc) as rn
+    from product
+)
+select
+    product_id,
+    product_name,
+    product_number,
+    make_flag,
+    finished_goods_flag,
+    color,
+    safety_stock_level,
+    reorder_point,
+    standard_cost,
+    list_price,
+    size,
+    size_unit_measure_code,
+    weight_unit_measure_code,
+    weight,
+    days_to_manufacture,
+    product_line,
+    product_class,
+    product_style,
+    subcategory_id,
+    subcategory_name,
+    category_id,
+    category_name,
+    sell_start_date,
+    sell_end_date,
+    discontinued_date,
+    loaded_at as valid_from
+from current
+where rn = 1

@@ -1,0 +1,66 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: "Customer dimension table"
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+        description: "Unique customer identifier"
+      - name: full_name
+        description: "Customer's full name"
+      - name: territory_id
+        description: "Sales territory assigned to customer"
+
+  - name: dim_product
+    description: "Product dimension with category hierarchy"
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+        description: "Unique product identifier"
+      - name: product_name
+        tests: [not_null]
+      - name: category_name
+      - name: subcategory_name
+
+  - name: dim_date
+    description: "Date dimension table"
+    columns:
+      - name: date_day
+        tests: [unique, not_null]
+        description: "Date in YYYY-MM-DD format"
+      - name: month
+        description: "Month name"
+      - name: year
+        description: "Year"
+
+  - name: dim_territory
+    description: "Sales territory dimension"
+    columns:
+      - name: territory_id
+        tests: [unique, not_null]
+      - name: territory_name
+        tests: [not_null]
+      - name: country_region_code
+      - name: sales_group
+
+  - name: fct_sales
+    description: "Sales fact table - transaction-level sales data"
+    columns:
+      - name: order_id
+        description: "Foreign key to orders table"
+      - name: order_detail_id
+        tests: [unique, not_null]
+        description: "Unique identifier for order line item"
+      - name: order_date
+        tests: [not_null]
+      - name: customer_id
+      - name: product_id
+        tests: [not_null]
+      - name: territory_id
+      - name: quantity
+        tests: [not_null]
+      - name: line_total
+        description: "Extended price after discount"
+      - name: total_due
+        description: "Order total including tax and freight"

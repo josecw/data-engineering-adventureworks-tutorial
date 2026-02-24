@@ -1,0 +1,65 @@
+# Polaris Catalog Configuration
+# This configuration sets up the Iceberg catalog via Polaris
+
+# Catalog configuration
+catalog:
+  name: "default"
+  type: "rest"
+  uri: "http://polaris:8181/api/catalog"
+
+# Warehouse configuration
+warehouse:
+  name: "default"
+  location: "s3://adventureworks-data/warehouse"
+
+# Security
+security:
+  # Admin credentials
+  admin:
+    username: "admin"
+    password: "polaris123"
+
+  # Roles
+  roles:
+    - name: "catalog_admin"
+      privileges:
+        - "catalog:create"
+        - "catalog:drop"
+        - "namespace:create"
+        - "namespace:drop"
+        - "table:create"
+        - "table:drop"
+        - "table:read"
+        - "table:write"
+
+    - name: "data_engineer"
+      privileges:
+        - "namespace:create"
+        - "table:create"
+        - "table:read"
+        - "table:write"
+
+    - name: "analyst"
+      privileges:
+        - "table:read"
+
+# Namespaces
+namespaces:
+  - name: "gold"
+    description: "Production gold layer - curated analytics data"
+    owner: "data-team"
+
+  - name: "silver"
+    description: "Silver layer - transformed data"
+    owner: "data-team"
+
+  - name: "bronze"
+    description: "Bronze layer - raw data"
+    owner: "data-team"
+
+# Default properties for new tables
+table_properties:
+  format-version: "2"
+  write.parquet.compression-codec: "snappy"
+  write.metadata.compression-codec: "gzip"
+  write.summary.partition-limit: "100"

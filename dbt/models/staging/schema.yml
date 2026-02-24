@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_sales__orders
+    description: "Staging table for sales order headers"
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: order_date
+        tests: [not_null]
+      - name: customer_id
+        tests: [not_null]
+      - name: territory_id
+
+  - name: stg_sales__order_detail
+    description: "Staging table for sales order line items"
+    columns:
+      - name: order_detail_id
+        tests: [unique, not_null]
+      - name: order_id
+        tests: [not_null]
+      - name: product_id
+        tests: [not_null]
+      - name: quantity
+        tests: [not_null]
+
+  - name: stg_person__customer
+    description: "Staging table joining customer and person"
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+      - name: person_id
+      - name: full_name
+
+  - name: stg_production__product
+    description: "Staging table for products with category hierarchy"
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+      - name: product_name
+        tests: [not_null]
+      - name: category_id
+      - name: subcategory_id
