@@ -1,0 +1,243 @@
+version: "3.8"
+
+x-airflow-common: &airflow-common
+  build: ./airflow
+  env_file: .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@${AIRFLOW_DB_HOST}/${AIRFLOW_DB_NAME}
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@${AIRFLOW_DB_HOST}/${AIRFLOW_DB_NAME}
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./meltano:/opt/meltano
+    - ./dbt:/opt/dbt
+    - ./spark/jobs:/opt/spark-jobs
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    airflow-db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  networks: [data-net]
+
+services:
+
+  # ─── 1. SOURCE (AdventureWorks OLTP) ─────────────────────────────────────
+  source-db:
+    image: chriseaton/adventureworks:latest
+    container_name: source-db
+    environment:
+      POSTGRES_PASSWORD: ${SOURCE_DB_PASSWORD}
+      POSTGRES_DB: ${SOURCE_DB_NAME}
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      retries: 5
+    networks: [data-net]
+
+  # ─── 2. DATA WAREHOUSE (Postgres) ────────────────────────────────────────
+  warehouse-db:
+    image: postgres:15
+    container_name: warehouse-db
+    environment:
+      POSTGRES_USER: ${DWH_DB_USER}
+      POSTGRES_PASSWORD: ${DWH_DB_PASSWORD}
+      POSTGRES_DB: ${DWH_DB_NAME}
+    ports: ["5433:5432"]
+    volumes:
+      - warehouse-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dwh_user"]
+      interval: 10s
+      retries: 5
+    networks: [data-net]
+
+  # ─── 3. AIRFLOW META DB ──────────────────────────────────────────────────
+  airflow-db:
+    image: postgres:15
+    container_name: airflow-db
+    environment:
+      POSTGRES_USER: ${AIRFLOW_DB_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_DB_NAME}
+    volumes:
+      - airflow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      retries: 5
+    networks: [data-net]
+
+  # ─── 4. REDIS (Celery Broker) ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+    networks: [data-net]
+
+  # ─── 5. AIRFLOW WEBSERVER ─────────────────────────────────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: webserver
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      retries: 5
+
+  # ─── 6. AIRFLOW SCHEDULER ─────────────────────────────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: scheduler
+
+  # ─── 7. AIRFLOW WORKERS (x2) ─────────────────────────────────────────────
+  airflow-worker-1:
+    <<: *airflow-common
+    container_name: airflow-worker-1
+    command: celery worker
+    environment:
+      DUMB_INIT_SETSID: "0"
+
+  airflow-worker-2:
+    <<: *airflow-common
+    container_name: airflow-worker-2
+    command: celery worker
+    environment:
+      DUMB_INIT_SETSID: "0"
+
+  # ─── 8. AIRFLOW INIT (runs once) ─────────────────────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    container_name: airflow-init
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create
+          --username ${_AIRFLOW_WWW_USER_USERNAME}
+          --password ${_AIRFLOW_WWW_USER_PASSWORD}
+          --firstname Admin --lastname User
+          --role Admin --email admin@example.com
+      "
+    restart: "no"
+
+  # ─── 9. AIRFLOW FLOWER (Worker monitor) ──────────────────────────────────
+  airflow-flower:
+    <<: *airflow-common
+    container_name: airflow-flower
+    command: celery flower
+    ports: ["5555:5555"]
+
+  # ─── 10. APACHE POLARIS (Iceberg REST Catalog) ───────────────────────────
+  polaris:
+    image: apache/polaris:latest
+    container_name: polaris
+    ports: ["8181:8181"]
+    volumes:
+      - ./infra/polaris/polaris-config.yml:/app/config.yml
+      - polaris-data:/tmp/iceberg
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/api/catalog/v1/config"]
+      interval: 15s
+      retries: 10
+    networks: [data-net]
+
+  # ─── 11. POLARIS BOOTSTRAP (creates catalog/namespace/roles) ────────────
+  polaris-bootstrap:
+    image: curlimages/curl:latest
+    container_name: polaris-bootstrap
+    volumes:
+      - ./infra/polaris/polaris-bootstrap.sh:/bootstrap.sh
+    command: sh /bootstrap.sh
+    depends_on:
+      polaris:
+        condition: service_healthy
+    networks: [data-net]
+    restart: "no"
+
+  # ─── 12. SPARK MASTER ────────────────────────────────────────────────────
+  spark-master:
+    build: ./spark
+    container_name: spark-master
+    environment:
+      SPARK_MODE: master
+      SPARK_RPC_AUTHENTICATION_ENABLED: "no"
+    volumes:
+      - ./spark/jobs:/opt/spark-jobs
+      - ./spark/conf/spark-defaults.conf:/opt/bitnami/spark/conf/spark-defaults.conf
+      - spark-warehouse:/tmp/iceberg
+    ports:
+      - "7077:7077"
+      - "8090:8080"
+    networks: [data-net]
+
+  # ─── 13. SPARK WORKER ────────────────────────────────────────────────────
+  spark-worker:
+    build: ./spark
+    container_name: spark-worker
+    environment:
+      SPARK_MODE: worker
+      SPARK_MASTER_URL: ${SPARK_MASTER}
+    volumes:
+      - ./spark/jobs:/opt/spark-jobs
+      - spark-warehouse:/tmp/iceberg
+    networks: [data-net]
+
+  # ─── 14. SUPERSET ────────────────────────────────────────────────────────
+  superset:
+    image: apache/superset:3.1.0
+    container_name: superset
+    ports: ["8088:8088"]
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+    volumes:
+      - ./infra/superset/superset_config.py:/app/pythonpath/superset_config.py
+      - superset-data:/app/superset_home
+    command: >
+      bash -c "
+        superset db upgrade &&
+        superset fab create-admin
+          --username admin --password admin
+          --firstname Admin --lastname User
+          --email admin@superset.com &&
+        superset init &&
+        gunicorn -w 4 -b 0.0.0.0:8088 'superset.app:create_app()'
+      "
+    depends_on:
+      warehouse-db:
+        condition: service_healthy
+    networks: [data-net]
+
+  # ─── 15. JUPYTER ─────────────────────────────────────────────────────────
+  jupyter:
+    image: jupyter/pyspark-notebook:spark-3.5.0
+    container_name: jupyter
+    ports: ["8888:8888"]
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      GRANT_SUDO: "yes"
+    volumes:
+      - ./notebooks:/home/jovyan/work
+      - ./spark/conf/spark-defaults.conf:/usr/local/spark/conf/spark-defaults.conf
+    networks: [data-net]
+
+volumes:
+  warehouse-data:
+  airflow-db-data:
+  airflow-logs:
+  polaris-data:
+  spark-warehouse:
+  superset-data:
+
+networks:
+  data-net:
+    driver: bridge

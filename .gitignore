@@ -1,0 +1,49 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+
+# Meltano
+.meltano/
+*.log
+
+# Airflow
+airflow/logs/
+airflow-logs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data files (optional - uncomment if generating large data)
+# *.csv
+# *.parquet
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes data (if mounted locally)
+warehouse-data/
+airflow-db-data/
+polaris-data/
+spark-warehouse/
+superset-data/

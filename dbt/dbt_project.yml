@@ -1,0 +1,17 @@
+name: adventureworks_dwh
+version: "1.0.0"
+config-version: 2
+profile: adventureworks_dwh
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+
+models:
+  adventureworks_dwh:
+    staging:
+      +schema: staging
+      +materialized: view
+    marts:
+      +schema: marts
+      +materialized: table

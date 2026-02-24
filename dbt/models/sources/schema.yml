@@ -1,0 +1,52 @@
+version: 2
+
+sources:
+  - name: raw_sales
+    database: warehouse
+    schema: raw_sales
+    description: "Raw Sales tables loaded by Meltano from AdventureWorks OLTP"
+    tables:
+      - name: salesorderheader
+        description: "Sales order header — one row per order"
+        columns:
+          - name: salesorderid
+            tests: [unique, not_null]
+          - name: orderdate
+            tests: [not_null]
+      - name: salesorderdetail
+        description: "Sales order line items"
+        columns:
+          - name: salesorderdetailid
+            tests: [unique, not_null]
+      - name: salesterritory
+        description: "Territory dimension"
+      - name: specialofferproduct
+
+  - name: raw_production
+    database: warehouse
+    schema: raw_production
+    tables:
+      - name: product
+        columns:
+          - name: productid
+            tests: [unique, not_null]
+      - name: productsubcategory
+      - name: productcategory
+
+  - name: raw_person
+    database: warehouse
+    schema: raw_person
+    tables:
+      - name: person
+        columns:
+          - name: businessentityid
+            tests: [unique, not_null]
+
+  - name: raw_sales_customer
+    database: warehouse
+    schema: raw_sales
+    tables:
+      - name: customer
+        columns:
+          - name: customerid
+            tests: [unique, not_null]
